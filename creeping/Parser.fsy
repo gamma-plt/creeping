@@ -1,0 +1,213 @@
+// fsyacc --module Parser Parser.fsy
+
+%{ 
+    open Syntax;
+    open Types;
+%}
+
+%token <int> CSTINT
+%token <bool> CSTBOOL
+%token <float> CSTREAL
+%token <char> CSTCHAR
+%token <string> CSTSTRING
+%token <string> NAME
+
+%token CSTNIL
+%token TYPEINT TYPEBOOL TYPEREAL TYPECHAR TYPESTRING
+%token PLUS MINUS TIMES DIV MOD CONCAT AND OR
+%token IF THEN ELSE
+%token EQ NE GT LT GE LE NOT
+%token LET IN END
+%token LPAR RPAR COLON ARROW
+%token LBRACKET RBRACKET CONS
+%token MATCH WITH BAR
+%token COMMA HASH DOT
+%token EOF
+
+%left ELSE                      /* lowest precedence  */
+%left COMMA                     
+%left ARROW
+%left AND OR 
+%left EQ NE 
+%nonassoc GT LT GE LE
+%left PLUS MINUS
+%left TIMES DIV MOD CONCAT 
+%left HASH CONS
+%nonassoc NOT                   /* highest precedence  */
+
+%start Main
+
+/* Processing whole programs */
+%type <Syntax.typexpr> Main
+
+/* Processing typexpr */
+%type <Syntax.typexpr> Expr
+%type <Syntax.typexpr> AtExpr
+
+/* Processing ConstN, ConstI, ConstB, ConstR, ConstC, ConstS */
+%type <Syntax.typexpr> Const
+
+/* Processing Tup */
+%type <Syntax.typexpr> TupleExpr
+%type <Syntax.typexpr list> TupleBody
+
+/* Processing List, Cons */
+%type <Syntax.typexpr> ListExpr
+%type <Syntax.typexpr list> ListBody
+%type <Syntax.typexpr> ConsExpr
+
+/* Processing Let */
+%type <Syntax.typexpr> LetExpr
+%type <string list> LetDefsBody
+%type <Syntax.typexpr list> LetValsBody
+
+/* Processing Letfun */
+%type <Syntax.typexpr> LetFunExpr
+%type <(string * Types.typ) list> LetFunArgs
+%type <string * Types.typ> LetFunArg
+%type <Types.typ> TypeExpr
+%type <Types.typ list> TupleTypeBody
+
+/* Processing Call */
+%type <Syntax.typexpr> ApplicationExpr
+%type <Syntax.typexpr list> ParametersExpr
+
+/* Processing Range */
+%type <Syntax.typexpr> RangeExpression
+
+/* Processing Match */
+%type <Syntax.typexpr> MatchExpr
+
+%%
+
+Main:
+    Expr EOF    { $1 }
+;
+
+Expr:
+    AtExpr                          { $1 }
+    | ApplicationExpr               { $1 }
+    | MatchExpr                     { $1 }
+    | IF Expr THEN Expr ELSE Expr   { If($2, $4, $6) }
+    | NOT Expr                      { If($2, ConstB false, ConstB true) }
+    | Expr PLUS   Expr              { Prim("+",  $1, $3) }
+    | Expr MINUS  Expr              { Prim("-",  $1, $3) }
+    | Expr TIMES  Expr              { Prim("*",  $1, $3) }
+    | Expr DIV    Expr              { Prim("/",  $1, $3) } 
+    | Expr MOD    Expr              { Prim("%",  $1, $3) }
+    | Expr CONCAT Expr              { Prim("^",  $1, $3) }
+    | Expr EQ     Expr              { Prim("=",  $1, $3) }
+    | Expr NE     Expr              { Prim("<>", $1, $3) }
+    | Expr GT     Expr              { Prim(">",  $1, $3) }
+    | Expr LT     Expr              { Prim("<",  $1, $3) }
+    | Expr GE     Expr              { Prim(">=", $1, $3) }
+    | Expr LE     Expr              { Prim("<=", $1, $3) }
+    | Expr AND    Expr              { If($1, $3, ConstB false) }
+    | Expr OR     Expr              { If($1, ConstB true, $3) }
+;
+
+AtExpr:
+    Const                   { $1 }
+    | TupleExpr             { $1 }
+    | ListExpr              { $1 }
+    | ConsExpr              { $1 }
+    | LetExpr               { $1 }
+    | LetFunExpr            { $1 }
+    | RangeExpression       { $1 }
+    | NAME                  { Var $1 }
+    | LPAR Expr RPAR        { $2 }
+    | HASH CSTINT AtExpr    { Sel($2, $3) }
+;
+
+Const:
+    CSTNIL          { ConstN }
+    | CSTINT        { ConstI($1) }
+    | CSTBOOL       { ConstB($1) }
+    | CSTREAL       { ConstR($1) }
+    | CSTCHAR       { ConstC($1) }
+    | CSTSTRING     { ConstS($1) }
+;
+
+TupleExpr:
+    LPAR TupleBody RPAR     { Tup $2 }
+;
+
+TupleBody:
+    Expr COMMA Expr         { [$1; $3] }
+    | Expr COMMA TupleBody  { $1 :: $3 } 
+;
+
+ListExpr:
+    LBRACKET ListBody RBRACKET  { List $2 }
+;
+
+ListBody:
+    Expr                    { [$1] }
+    | Expr COMMA ListBody   { $1 :: $3 } 
+;
+
+ConsExpr:
+    Expr CONS Expr  { Cons($1, $3) }
+;
+
+LetExpr:
+    LET LetDefsBody EQ LetValsBody IN Expr END  { Let(List.zip $2 $4, $6) }
+;
+
+LetDefsBody:
+    NAME                        { [$1] }
+    | NAME COMMA LetDefsBody    { $1 :: $3 } 
+;
+
+LetValsBody:
+    Expr                        { [$1] }
+    | Expr COMMA LetValsBody    { $1 :: $3 } 
+;
+
+LetFunExpr:
+    LET NAME LetFunArgs COLON TypeExpr EQ Expr IN Expr END  { Letfun($2, $3, $5, $7, $9) }
+;
+
+LetFunArgs:
+    LetFunArg               { [$1] }
+    | LetFunArg LetFunArgs  { $1::$2 }
+
+;
+
+LetFunArg:
+    LPAR NAME COLON TypeExpr RPAR { ($2, $4) }
+;
+
+TypeExpr:
+    TYPEINT                         { TypeI }                            
+    | TYPEBOOL                      { TypeB }
+    | TYPEREAL                      { TypeR }
+    | TYPECHAR                      { TypeC }
+    | TYPESTRING                    { TypeS }
+    | LPAR TupleTypeBody RPAR       { TypeT $2 }
+    | LBRACKET TypeExpr RBRACKET    { TypeL $2 }
+;
+
+TupleTypeBody:
+    TypeExpr TIMES TypeExpr         { [$1; $3] }
+    | TypeExpr TIMES TupleTypeBody  { $1 :: $3 } 
+;
+
+ApplicationExpr:
+    NAME ParametersExpr     { Call(Var $1, $2) }
+;
+
+ParametersExpr:
+    AtExpr                      { [$1] }
+    | AtExpr ParametersExpr     { $1 :: $2 }
+;
+
+RangeExpression:
+    | LBRACKET Expr COMMA Expr DOT DOT Expr RBRACKET    { Range($2, Some $4, $7) }
+    | LBRACKET Expr DOT DOT Expr RBRACKET               { Range($2, None, $5) }
+;
+
+MatchExpr:
+    MATCH Expr WITH CSTNIL ARROW Expr BAR NAME CONS NAME ARROW Expr 
+        { Match($2, $6, ($8, $10, $12)) }
+;
