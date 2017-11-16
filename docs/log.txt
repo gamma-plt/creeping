@@ -1,0 +1,26 @@
+No single char function names allowed
+Error reportng
+Whenerver something cracks, it halts
+Repeated arg names alowed
+Some weird parsing errors
+string concatenation behaves weird, or at least reports weird things
+string multiplication behaves weird, or at least reports weird things
+
+
+
+WEIRD:
+
+let len (xs : [int]) : int = 
+	match xs with
+		[] -> 0
+		| h::t -> 1 + len t
+in len (1::2::3::4::5::[]) end
+
+WEIRD PARSING:
+
+let max (x:char) (y:char) : char = if x > y then x else y in
+	let max3 (xyz : (char * char * char)) : char = 
+		let x, y, z = #1(xyz), #2(xyz), #3(xyz) 
+		in max #1(xyz) (max #2(xyz) z) end
+	in max3 ('a', 'b', 'c') end
+end
