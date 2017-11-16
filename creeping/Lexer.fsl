@@ -1,0 +1,93 @@
+// fslex --unicode Lexer.fsl
+
+{
+
+module Lexer
+
+open Microsoft.FSharp.Text.Lexing
+open Parser
+
+let lexemeAsString lexbuf = LexBuffer<char>.LexemeString lexbuf
+
+(* Start of outermost comment currently being scanned *)
+let commentStart = ref Position.Empty;  
+ 
+let commentDepth = ref 0;  (* Current comment nesting *)
+
+(* Distinguish keywords from identifiers: *)
+
+let keyword s =
+    match s with
+    | "else"    -> ELSE 
+    | "end"     -> END
+    | "false"   -> CSTBOOL false
+    | "if"      -> IF
+    | "in"      -> IN
+    | "let"     -> LET
+    | "not"     -> NOT
+    | "then"    -> THEN
+    | "match"   -> MATCH
+    | "with"    -> WITH
+    | "true"    -> CSTBOOL true
+    | "int"     -> TYPEINT
+    | "bool"    -> TYPEBOOL
+    | "real"    -> TYPEREAL
+    | "char"    -> TYPECHAR
+    | "string"  -> TYPESTRING
+    | _         -> NAME s
+
+}
+
+let escape = [' ' '\t' '\r']
+let newline = '\n'
+let number = ('-')?['0'-'9']+
+let cstNil = '['']'
+let cstInt = number
+let cstChar = ''' ['a'-'z''A'-'Z''0'-'9'] '''
+let cstReal = number '.' number
+let cstString = '"' ['a'-'z''A'-'Z']['a'-'z''A'-'Z''0'-'9']* '"'
+let reserved = ['a'-'z''A'-'Z']['a'-'z''A'-'Z''0'-'9']*
+
+rule Token = parse
+    | escape                    { Token lexbuf }
+    | newline                   { lexbuf.EndPos <- lexbuf.EndPos.NextLine; Token lexbuf }
+    | cstInt                    { CSTINT (System.Int32.Parse (lexemeAsString lexbuf)) }
+    | cstChar                   { CSTCHAR (char (lexemeAsString lexbuf).[1])}
+    | cstReal                   { CSTREAL (System.Double.Parse (lexemeAsString lexbuf)) }
+    | cstString                 { CSTSTRING (lexemeAsString lexbuf) }
+    | reserved                  { keyword (lexemeAsString lexbuf) }
+    | cstNil                    { CSTNIL }
+    | "(*"                      { commentStart := lexbuf.StartPos; commentDepth := 1; SkipComment lexbuf; Token lexbuf }
+    | '='                       { EQ }
+    | "<>"                      { NE }
+    | '>'                       { GT }
+    | '<'                       { LT }
+    | ">="                      { GE }
+    | "<="                      { LE }
+    | '+'                       { PLUS }                     
+    | '-'                       { MINUS }                     
+    | '*'                       { TIMES }                     
+    | '/'                       { DIV }                     
+    | '%'                       { MOD }
+    | "&&"                      { AND }                     
+    | "||"                      { OR }
+    | '^'                       { CONCAT }
+    | '('                       { LPAR }
+    | ')'                       { RPAR }
+    | ':'                       { COLON }
+    | "->"                      { ARROW }
+    | '['                       { LBRACKET }
+    | ']'                       { RBRACKET }
+    | "::"                      { CONS }
+    | '|'                       { BAR }
+    | ','                       { COMMA }
+    | '#'                       { HASH }
+    | '.'                       { DOT }
+    | eof                       { EOF }
+    | _                         { failwith "Lexer error: illegal symbol" }
+
+and SkipComment = parse
+    "*)"                        { commentDepth := !commentDepth - 1; if !commentDepth = 0 then () else SkipComment lexbuf } 
+   | "(*"                       { commentDepth := !commentDepth + 1;  SkipComment lexbuf }
+   | eof                        { failwith "Lexer error: unterminated comment" }
+   | _                          { SkipComment lexbuf }
